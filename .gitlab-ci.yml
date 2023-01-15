@@ -1,0 +1,50 @@
+image: node:16
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .npm/
+    - node_modules/
+
+stages: 
+  - lint
+  - test
+
+####### LINT #######
+lint:
+ stage: lint
+ needs: []
+ script:
+  - cd /builds/musala-task
+  - npm ci
+  - npm run lint
+####### TEST #######
+test:
+ stage: test
+ needs: []
+ services:
+  - mongo:4.0.4
+ script:
+  - cd /builds/musala-task
+  - cp $TEST_ENV env/TEST.env
+  - npm ci
+  - npm test
+  before_script:
+  - apt-get update -qq
+  - apt-get install -qq git
+  # Setup SSH deploy keys
+  - 'which ssh-agent || ( apt-get install -qq openssh-client )'
+  - eval $(ssh-agent -s)
+  - ssh-add <(echo "$SSH_PRIVATE_KEY")
+  - mkdir -p ~/.ssh
+  - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
+  stage: deploy
+  needs: ["lint", "test"]
+  when: manual
+  environment:
+    name: production
+    url: https://speero.net
+  allow_failure: false
+  script:
+    - ssh root@$PROD_SERVER_IP "bash --login -c 'cd /root/speero-backend && git stash && git checkout master && git pull origin master && npm ci && npm run reload:prod && exit'"
+  only:
+    - master
